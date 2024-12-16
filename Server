@@ -1,0 +1,1519 @@
+const express = require('express');
+const session = require('express-session');
+const bcrypt = require('bcrypt');
+const mysql = require('mysql2');
+const app = express();
+const path = require('path');
+const bodyParser = require('body-parser');
+
+const multer = require('multer');
+const xlsx = require('xlsx');
+const { connect } = require('http2');
+require('dotenv').config();
+const PDFDocument = require('pdfkit'); 
+
+
+timezone: 'America/Tijuana'
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+      if (req.session.user && roles.includes(req.session.user.tipo_usuario)) {
+          next();
+      } else {
+          res.status(403).send('Acceso denegado');
+      }
+  };
+}
+function requireLogin(req, res, next) {
+  if (!req.session.user) {
+    return res.redirect('/login.html');
+  }
+  next();
+}
+app.get('/protected', requireLogin, (req, res) => {
+  res.sendFile(__dirname + '/busqueda.html');
+});
+app.get('/protected', requireLogin, (req, res) => {
+  res.sendFile(__dirname + '/editarm.html');
+});
+app.get('/protected', requireLogin, (req, res) => {
+  res.sendFile(__dirname + '/editarp.html');
+});
+app.get('/protected', requireLogin, (req, res) => {
+  res.sendFile(__dirname + '/equipos.html');
+});
+app.get('/protected', requireLogin, (req, res) => {
+  res.sendFile(__dirname + '/index.html');
+});app.get('/protected', requireLogin, (req, res) => {
+  res.sendFile(__dirname + '/modificar-tabla.html');
+});app.get('/protected', requireLogin, (req, res) => {
+  res.sendFile(__dirname + '/navbar.html');
+});app.get('/protected', requireLogin, (req, res) => {
+  res.sendFile(__dirname + '/Rutinas.html');
+});
+app.get('/protected', requireLogin, (req, res) => {
+  res.sendFile(__dirname + '/sueldo.html');
+});
+// Configuración de la sesión
+app.use(session({
+  secret: 'secretKey',
+  resave: false,
+  saveUninitialized: false,
+}));
+
+// Ruta protegida (Página principal después de iniciar sesión)
+app.get('/', requireLogin, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+
+app.use(express.urlencoded({ extended: true }));
+
+// Servir archivos estáticos (HTML)
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+
+
+const connection = mysql.createConnection({
+  host: process.env.DB_HOST,     
+  user: process.env.DB_USER,       
+  password: process.env.DB_PASSWORD,   
+  database: process.env.DB_NAME    
+  });
+
+connection.connect(err => {
+  if (err) {
+    console.error('Error conectando a MySQL:', err);
+    return;
+  }
+  console.log('Conexión exitosa a MySQL');
+});
+
+
+
+
+
+// Iniciar el servidor
+app.listen(3000, () => {
+  console.log('Servidor corriendo en http://localhost:3000');
+});
+
+
+// Registro de usuario
+app.post('/registrar', async (req, res) => {
+  const { nombre_usuario, password, codigo_acceso, correo } = req.body;
+
+  const query = 'SELECT tipo_usuario FROM codigos_acceso WHERE codigo = ?';
+  connection.query(query, [codigo_acceso], (err, results) => {
+      if (err || results.length === 0) {
+          return res.send(`
+              <html>
+              <head>
+                  <link rel="stylesheet" href="/styles.css">
+              </head>
+              <body>
+                  <div class="message-container error">
+                      Código de acceso inválido
+                      <div>
+                          <button onclick="window.location.href='/registro.html'">Volver a Registro</button>
+                      </div>
+                  </div>
+              </body>
+              </html>
+          `);
+      }
+
+      const tipo_usuario = results[0].tipo_usuario;
+      const hashedPassword = bcrypt.hashSync(password, 10);
+
+      const insertUser = 'INSERT INTO usuarios (nombre_usuario, password_hash, tipo_usuario, correo) VALUES (?, ?, ?, ?)';
+      connection.query(insertUser, [nombre_usuario, hashedPassword, tipo_usuario, correo], (err) => {
+          if (err) {
+              return res.send(`
+                  <html>
+                  <head>
+                      <link rel="stylesheet" href="/styles.css">
+                  </head>
+                  <body>
+                      <div class="message-container error">
+                          Error al registrar usuario
+                          <div>
+                              <button onclick="window.location.href='/registro.html'">Volver a Registro</button>
+                          </div>
+                      </div>
+                  </body>
+                  </html>
+              `);
+          }
+          res.send(`
+              <html>
+              <head>
+                  <link rel="stylesheet" href="/styles.css">
+              </head>
+              <body>
+                  <div class="message-container success">
+                      Usuario registrado exitosamente.
+                      <div>
+                          <a href="/login.html">Ir a login</a>
+                      </div>
+                  </div>
+              </body>
+              </html>
+          `);
+      });
+  });
+});
+
+
+app.post('/login', (req, res) => {
+  const { nombre_usuario, password } = req.body;
+
+  // Consulta para obtener el usuario y su tipo
+  const query = 'SELECT * FROM usuarios WHERE nombre_usuario = ?';
+  connection.query(query, [nombre_usuario], (err, results) => {
+      if (err) {
+          return res.send(`
+              <!DOCTYPE html>
+              <html lang="en">
+              <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <link rel="stylesheet" href="/styles.css">
+                  <title>Error</title>
+              </head>
+              <body>
+                  <div class="error-container">
+                      <h1>Error al obtener el usuario</h1>
+                      <button onclick="window.location.href='/login.html'">Regresar al Login</button>
+                  </div>
+              </body>
+              </html>
+          `);
+      }
+
+      if (results.length === 0) {
+          return res.send(`
+              <!DOCTYPE html>
+              <html lang="en">
+              <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <link rel="stylesheet" href="/styles.css">
+                  <title>Error</title>
+              </head>
+              <body>
+                  <div class="error-container">
+                      <h1>Usuario no encontrado</h1>
+                      <button onclick="window.location.href='/login.html'">Regresar al Login</button>
+                  </div>
+              </body>
+              </html>
+          `);
+      }
+
+      const user = results[0];
+
+      // Verificar la contraseña
+      const isPasswordValid = bcrypt.compareSync(password, user.password_hash);
+      if (!isPasswordValid) {
+          return res.send(`
+              <!DOCTYPE html>
+              <html lang="en">
+              <head>
+                  <meta charset="UTF-8">
+                  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                  <link rel="stylesheet" href="/styles.css">
+                  <title>Error</title>
+              </head>
+              <body>
+                  <div class="error-container">
+                      <h1>Contraseña incorrecta</h1>
+                      <button onclick="window.location.href='/login.html'">Regresar al Login</button>
+                  </div>
+              </body>
+              </html>
+          `);
+      }
+
+      // Almacenar la información del usuario en la sesión
+      req.session.user = {
+          id: user.id,
+          nombre_usuario: user.nombre_usuario,
+          tipo_usuario: user.tipo_usuario // Aquí se establece el tipo de usuario en la sesión
+      };
+
+      // Redirigir al usuario a la página principal
+      res.redirect('/');
+  });
+});
+
+
+// Cerrar sesión
+app.get('/logout', (req, res) => {
+  req.session.destroy();
+  res.redirect('/login.html');
+});
+
+
+app.post('/submit-data', requireLogin, requireRole('admin', 'medico'), (req, res) => {
+  const { name, age, heart_rate, presion, peso } = req.body;
+
+  const query = 'INSERT INTO pacientes (nombre, edad, frecuencia_cardiaca, presion, peso) VALUES (?, ?, ?, ?, ?)';
+  connection.query(query, [name, age, heart_rate, presion, peso], (err, result) => {
+    if (err) {
+      return res.send(`
+        <html>
+        <head>
+          <link rel="stylesheet" href="/styles.css">
+        </head>
+        <body>
+          <div class="message-container error">Error al guardar los datos en la base de datos.</div>
+        </body>
+                <button onclick="window.location.href='/'">Volver</button>
+
+        </html>
+      `);
+    }
+    res.send(`
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+      </head>
+      <body>
+        <div class="message-container success">Paciente ${name} guardado en la base de datos.</div>
+      </body>
+              <button onclick="window.location.href='/'">Volver</button>
+
+      </html>
+    `);
+  });
+});
+
+
+// Ruta para mostrar los datos de la base de datos en formato HTML
+
+
+
+app.get('/medicos',requireLogin, requireRole('admin'), (req, res) => {
+  connection.query('SELECT * FROM medicos', (err, results) => {
+    if (err) {
+      return res.send('Error al obtener los datos.');
+    }
+
+    let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Medicos</title>
+      </head>
+      <body>
+        <h1>Medicos Registrados</h1>
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Especialidad</th>
+              <th>Id del Area</th>
+               <th>sueldo</th>
+
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(medicos => {
+      html += `
+        <tr>
+          <td>${medicos.nombre}</td>
+          <td>${medicos.especialidad}</td>
+          <td>${medicos.area_id}</td>
+          <td>${medicos.salario}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+        <button onclick="window.location.href='/'">Volver</button>
+        <button onclick="window.location.href='/medicosALF'">Ver Medicos Guardados alfabeticamente</button>
+      </body>
+      </html>
+    `;
+
+    res.send(html);
+  });
+});
+
+app.get('/medicosALF', requireLogin, requireRole('admin'), (req, res) => {
+  const query = 'SELECT * FROM medicos ORDER BY nombre ASC';
+
+  connection.query(query, (err, results) => {
+    if (err) {
+      return res.send('Error al obtener los datos.');
+    }
+
+    let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Medicos</title>
+      </head>
+      <body>
+        <h1>Medicos Registrados</h1>
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Especialidad</th>
+               <th>Id del Area</th>
+               <th>sueldo</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(medicos => {
+      html += `
+        <tr>
+          <td>${medicos.nombre}</td>
+          <td>${medicos.especialidad}</td>
+          <td>${medicos.area_id}</td>
+          <td>${medicos.salario}</td>
+        </tr>
+      `;
+    });
+
+
+  html += `
+        </tbody>
+      </table>
+      <button onclick="window.location.href='/'">Volver</button>
+    </body>
+    </html>
+  `;
+
+  res.send(html);
+});
+});
+
+
+// Otras rutas protegidas
+app.get('/buscar-pacientes', requireLogin,requireRole('medico', 'admin'), (req, res) => {
+  // lógica de búsqueda de pacientes
+  // Ruta para buscar pacientes según filtros
+  const { name_search, age_search } = req.query;
+  let query = 'SELECT * FROM pacientes WHERE 1=1';
+
+  if (name_search) {
+    query += ` AND nombre LIKE '%${name_search}%'`;
+  }
+  if (age_search) {
+    query += ` AND edad = ${age_search}`;
+  }
+
+  connection.query(query, (err, results) => {
+    if (err) {
+      return res.send('Error al obtener los datos.');
+    }
+
+    let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Resultados de Búsqueda</title>
+      </head>
+      <body>
+        <h1>Resultados de Búsqueda</h1>
+        <table>
+          <thead>
+            <tr>
+              <th>Id</th>
+              <th>Nombre</th>
+              <th>Edad</th>
+              <th>Frecuencia Cardiaca (bpm)</th>
+              <th>Presion del Paciente (mmHg)</th>
+              <th>Peso del paciente (Kg)</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(paciente => {
+      html += `
+        <tr>
+           <td>${paciente.id}</td>
+          <td>${paciente.nombre}</td>
+          <td>${paciente.edad}</td>
+          <td>${paciente.frecuencia_cardiaca}</td>
+           <td>${paciente.presion}</td>
+          <td>${paciente.Peso}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+        <button onclick="window.location.href='/'">Volver</button>
+      </body>
+      </html>
+    `;
+
+    res.send(html);
+  });
+});
+
+
+app.get('/ordenar-pacientes', requireLogin, requireRole('medico', 'admin'), (req, res) => {
+  // lógica de ordenamiento de pacientes
+  // Ruta para ordenar pacientes por frecuencia cardiaca
+  const query = 'SELECT * FROM pacientes ORDER BY frecuencia_cardiaca DESC';
+
+  connection.query(query, (err, results) => {
+    if (err) {
+      return res.send('Error al obtener los datos.');
+    }
+
+    let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Pacientes Ordenados</title>
+      </head>
+      <body>
+        <h1>Pacientes Ordenados por Frecuencia Cardiaca</h1>
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Edad</th>
+              <th>Frecuencia Cardiaca (bpm)</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(paciente => {
+      html += `
+        <tr>
+          <td>${paciente.nombre}</td>
+          <td>${paciente.edad}</td>
+          <td>${paciente.frecuencia_cardiaca}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+        <button onclick="window.location.href='/'">Volver</button>
+      </body>
+      </html>
+    `;
+
+    res.send(html);
+  });
+});
+
+app.post('/insertar-medico', requireLogin, requireRole('admin'), (req, res) => {
+  const { medico_name, especialidad, area } = req.body;
+  const query = 'INSERT INTO medicos (nombre, especialidad, area_id) VALUES (?, ?, ?)';
+
+  connection.query(query, [medico_name, especialidad, area], (err, result) => {
+    if (err) {
+      return res.send(`
+        <html>
+        <head>
+            <link rel="stylesheet" href="/styles.css">
+        </head>
+        <body>
+            <div class="message-container error">Error al insertar el médico.</div>
+        </body>
+        </html>
+      `);
+    }
+    res.send(`
+      <html>
+      <head>
+          <link rel="stylesheet" href="/styles.css">
+      </head>
+      <body>
+          <div class="message-container success">Médico ${medico_name} guardado exitosamente.</div>
+          
+      </body>
+              <button onclick="window.location.href='/'">Volver</button>
+
+      </html>
+    `);
+  });
+});
+
+
+// Ruta para que solo admin pueda ver todos los usuarios
+app.get('/ver-usuarios', requireLogin, requireRole('admin'), (req, res) => {
+  const query = 'SELECT * FROM usuarios';
+  connection.query(query, (err, results) => {
+      if (err) return res.send('Error al obtener usuarios');
+    
+      let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Resultados de Búsqueda</title>
+      </head>
+      <body>
+        <h1>Resultados de Búsqueda</h1>
+        <table>
+          <thead>
+            <tr>
+              <th>Id</th>
+              <th>Nombre</th>
+              <th>Contraseña</th>
+              <th>Tipo de usuario</th>
+              <th>correo</th
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(usuario => {
+      html += `
+        <tr>
+           <td>${usuario.id}</td>
+          <td>${usuario.nombre_usuario}</td>
+          <td>${usuario.password_hash}</td>
+          <td>${usuario.tipo_usuario}</td>
+          <td>${usuario.correo}</td>
+
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+        <button onclick="window.location.href='/'">Volver</button>
+      </body>
+      </html>
+    `;
+
+    res.send(html);
+  });
+});
+
+// Ruta para que los médicos puedan ver pacientes
+app.get('/pacientes', requireLogin, requireRole('medico', 'admin'), (req, res) => {
+  // Lógica de consulta para ver pacientes
+    connection.query('SELECT * FROM pacientes', (err, results) => {
+      if (err) {
+        return res.send('Error al obtener los datos.');
+      }
+  
+      let html = `
+        <html>
+        <head>
+          <link rel="stylesheet" href="/styles.css">
+          <title>Pacientes</title>
+        </head>
+        <body>
+          <h1>Pacientes Registrados</h1>
+          <table>
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Edad</th>
+                <th>Frecuencia Cardiaca (bpm)</th>
+                <th>Presion del Paciente (mmHg)</th>
+                <th>Peso del paciente (Kg)</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+  
+      results.forEach(paciente => {
+        html += `
+          <tr>
+            <td>${paciente.nombre}</td>
+            <td>${paciente.edad}</td>
+            <td>${paciente.frecuencia_cardiaca}</td>
+            <td>${paciente.presion}</td>
+            <td>${paciente.Peso}</td>
+          </tr>
+        `;
+      });
+  
+      html += `
+            </tbody>
+          </table>
+          <button onclick="window.location.href='/'">Volver</button>
+        </body>
+        </html>
+      `;
+  
+      res.send(html);
+    });
+});
+
+// Ruta para obtener el tipo de usuario actual
+app.get('/tipo-usuario', requireLogin, (req, res) => {
+  res.json({ tipo_usuario: req.session.user.tipo_usuario });
+}); 
+
+app.get('/editar-pacientes', requireLogin, requireRole('medico', 'admin'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'editarp.html'));
+});
+
+app.get('/obtener-paciente/:id', requireLogin, requireRole('medico', 'admin'), (req, res) => {
+  const { id } = req.params;
+  const query = 'SELECT * FROM pacientes WHERE id = ?';
+  connection.query(query, [id], (err, results) => {
+    if (err) {
+      return res.status(500).send(`
+        <link rel="stylesheet" href="styles.css">
+        <div class="error">Error al obtener el paciente</div>
+        <button onclick="window.location.href='/editarp.html'">Volver</button>
+      `);
+    }
+    if (results.length === 0) {
+      return res.status(404).send(`
+        <link rel="stylesheet" href="styles.css">
+        <div class="error">Paciente no encontrado</div>
+        <button onclick="window.location.href='/editarp.html'">Volver</button>
+      `);
+    }
+    res.json(results[0]);
+  });
+});
+
+app.post('/editar-pacientes', requireLogin, requireRole('medico', 'admin'), (req, res) => {
+  const { id, nombre, edad, frecuencia_cardiaca, presion, peso } = req.body;
+  const query = 'UPDATE pacientes SET nombre = ?, edad = ?, frecuencia_cardiaca = ?, presion = ?, peso = ? WHERE id = ?';
+  connection.query(query, [nombre, edad, frecuencia_cardiaca, presion, peso, id], (err, result) => {
+    if (err) {
+      return res.send(`
+        <link rel="stylesheet" href="styles.css">
+        <div class="error">Error al actualizar los datos del paciente</div>
+        <button onclick="window.location.href='/editarp.html'">Volver</button>
+      `);
+    }
+    res.send(`
+      <link rel="stylesheet" href="styles.css">
+      <div class="success">Paciente ${nombre} actualizado correctamente</div>
+        <button onclick="window.location.href='/editarp.html'">Volver</button>
+    `);
+  });
+});
+
+app.delete('/eliminar-paciente/:id', requireLogin, requireRole('medico', 'admin'), (req, res) => {
+  const { id } = req.params;  
+  const query = 'DELETE FROM pacientes WHERE id = ?';
+  connection.query(query, [id], (err, result) => {
+    if (err) {
+      return res.status(500).send(`
+        <link rel="stylesheet" href="styles.css">
+        <div class="error">Error al eliminar el paciente</div>
+        <button onclick="window.location.href='/editarp.html'">Volver</button>
+      `);
+    }
+    if (result.affectedRows === 0) {
+      return res.status(404).send(`
+        <link rel="stylesheet" href="styles.css">
+        <div class="error">Paciente no encontrado</div>
+        <button onclick="window.location.href='/editarp.html'">Volver</button>
+      `);
+    }
+    res.send(`
+      <link rel="stylesheet" href="styles.css">
+      <div class="success">Paciente con ID ${id} eliminado exitosamente</div>
+        <button onclick="window.location.href='/editarp.html'">Volver</button>
+    `);
+  });
+});
+
+
+// Ruta para que el paciente vea sus propios datos
+app.get('/ver-mis-datos', requireLogin, requireRole('paciente'), (req, res) => {
+  const user = req.session.user.nombre_usuario;
+  const query = 'SELECT * FROM pacientes WHERE nombre = ? ';
+  connection.query(query, [user], (err, results) => {
+      if (err) return res.send('Error al obtener usuarios');
+    
+      let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Resultados de Búsqueda</title>
+      </head>
+      <body>
+        <h1>Resultados de Búsqueda</h1>
+        <table>
+          <thead>
+            <tr>
+              <th>Id</th>
+              <th>Nombre</th>
+              <th>Edad</th>
+              <th>Frecuencia Cardiaca (bpm)</th>
+              <th>Presion del Paciente (mmHg)</th>
+              <th>Peso del paciente (Kg)</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(paciente => {
+      html += `
+        <tr>
+           <td>${paciente.id}</td>
+          <td>${paciente.nombre}</td>
+          <td>${paciente.edad}</td>
+          <td>${paciente.frecuencia_cardiaca}</td>
+           <td>${paciente.presion}</td>
+          <td>${paciente.Peso}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+        <button onclick="window.location.href='/'">Volver</button>
+      </body>
+      </html>
+    `;
+
+    res.send(html);
+  });
+});
+
+
+
+app.get('/menu',requireLogin, (req, res) => {
+  const menuItems = [
+    { nombre: 'Inicio', url: '/index.html' },
+    { nombre: 'Equipos', url: '/equipos.html' },
+    { nombre: 'Usuarios', url: '/ver-usuarios' },
+    { nombre: 'Búsqueda', url: '/busqueda.html' }
+  ];
+  res.json(menuItems);
+});
+
+app.get('/buscar', requireLogin, requireRole('medico','admin'), (req, res) => {
+  const query = req.query.query;
+  const sql = `SELECT nombre_usuario, correo FROM usuarios WHERE nombre_usuario LIKE ?`;
+  connection.query(sql, [`%${query}%`], (err, results) => {
+    if (err) throw err;
+    res.json(results);
+  });
+});
+
+const upload = multer({ dest: 'uploads/' });
+
+app.post('/upload', upload.single('excelFile'), requireLogin, requireRole('admin'), (req, res) => {
+  const filePath = req.file.path;
+  const workbook = xlsx.readFile(filePath);
+  const sheetName = workbook.SheetNames[0];
+  const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName]);
+
+  data.forEach(row => {
+    const { nombre, descripcion } = row;
+    const sql = `INSERT INTO equipos (nombre, descripcion) VALUES (?, ?)`;
+    connection.query(sql, [nombre, descripcion], err => {
+      if (err) throw err;
+    });
+  });
+
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Confirmación</title>
+      <link rel="stylesheet" href="/styles.css">
+    </head>
+    <body>
+      <div class="confirmation-message">
+        <h1>Archivo cargado y datos guardados</h1>
+        <a href="/equipos.html" class="back-button">Volver</a>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
+app.get('/download',requireLogin, requireRole('admin','medico','jefem','mantenimiento'), (req, res) => {
+  const sql = `SELECT * FROM equipos`;
+  connection.query(sql, (err, results) => {
+    if (err) throw err;
+
+    const worksheet = xlsx.utils.json_to_sheet(results);
+    const workbook = xlsx.utils.book_new();
+    xlsx.utils.book_append_sheet(workbook, worksheet, 'Equipos');
+
+    const filePath = path.join(__dirname, 'uploads', 'equipos.xlsx');
+    xlsx.writeFile(workbook, filePath);
+    res.download(filePath, 'equipos.xlsx');
+  });
+});
+
+app.get('/download-pdf', requireLogin, requireRole('admin', 'medico','jefem','mantenimiento'), (req, res) => {
+  const sql = `SELECT * FROM equipos`;
+  connection.query(sql, (err, results) => {
+    if (err) throw err;
+
+    // Crear un nuevo documento PDF
+    const doc = new PDFDocument();
+
+    // Configurar el encabezado de respuesta para descargar el PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=equipos.pdf');
+
+    // Enviar el documento PDF a la respuesta directamente
+    doc.pipe(res);
+
+    // Agregar título al documento
+    doc.fontSize(20).text('Lista de Equipos', { align: 'center' });
+    doc.moveDown();
+
+    // Agregar tabla con los datos
+    results.forEach((row, index) => {
+      doc.fontSize(12).text(`Equipo #${index + 1}`, { underline: true });
+      doc.text(`Nombre: ${row.nombre}`);
+      doc.text(`Descripción: ${row.descripcion}`);
+      doc.moveDown();
+    });
+
+    // Finalizar el documento
+    doc.end();
+  });
+});
+
+app.get('/editar-medico', requireLogin, requireRole('admin'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'editarm.html'));
+});
+
+app.get('/obtener-medico/:id', requireLogin, requireRole('admin'), (req, res) => {
+  const { id } = req.params;
+  const query = 'SELECT * FROM medicos WHERE id = ?';
+  connection.query(query, [id], (err, results) => {
+    if (err) return res.status(500).send('Error al obtener al medico');
+    if (results.length === 0) return res.status(404).send('Medico no encontrado');
+    res.json(results[0]);
+  });
+});
+
+app.post('/sueldo', requireLogin, requireRole('admin'), (req, res) => {
+  const { id, sueldo, nombre } = req.body;
+  const query = 'UPDATE medicos SET salario = ? WHERE id = ?';
+  
+  connection.query(query, [parseFloat(sueldo), id], (err, result) => {
+    if (err) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+          <meta charset="UTF-8">
+          <title>Error</title>
+          <link rel="stylesheet" href="/styles.css">
+        </head>
+        <body>
+          <div class="message-container">
+            <h2>Error al guardar el salario</h2>
+            <p>Hubo un problema al intentar actualizar el salario. Por favor, intenta nuevamente.</p>
+            <button onclick="window.location.href='/editar-medico'">Volver</button>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+    
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <title>Salario actualizado</title>
+        <link rel="stylesheet" href="/styles.css">
+      </head>
+      <body>
+        <div class="message-container">
+          <h2>Salario registrado correctamente</h2>
+          <p>El salario del médico <strong>${nombre}</strong> ha sido actualizado correctamente.</p>
+          <button onclick="window.location.href='/editar-medico'">Volver</button>
+        </div>
+      </body>
+      </html>
+    `);
+  });
+});
+app.get('/buscar-salario', requireLogin,requireRole('admin'), (req, res) => {
+  const { salario} = req.query;
+  let query = 'SELECT * FROM medicos WHERE 1=1';
+
+  if (salario) {
+    query += ` AND salario > ${salario}`;
+  }
+
+  connection.query(query, (err, results) => {
+    if (err) {
+      return res.send('Error al obtener los datos.');
+    }
+
+    let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Resultados de Búsqueda</title>
+      </head>
+      <body>
+        <h1>Resultados de Búsqueda</h1>
+        <table>
+          <thead>
+            <tr>
+              <th>Id</th>
+              <th>Nombre</th>
+              <th>Especialidad</th>
+              <th>Id del Area</th>
+              <th>Salario</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(medico => {
+      html += `
+        <tr>
+           <td>${medico.id}</td>
+          <td>${medico.nombre}</td>
+          <td>${medico.especialidad}</td>
+          <td>${medico.area_id}</td>
+           <td>${medico.salario}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+        <button onclick="window.location.href='/'">Volver</button>
+      </body>
+      </html>
+    `;
+
+    res.send(html);
+  });
+});
+app.get('/num-piso',requireLogin, requireRole('admin'), (req, res) => {
+  connection.query('SELECT * FROM vista_num_medicos', (err, results) => {
+    if (err) {
+      return res.send('Error al obtener los datos.');
+    }
+
+    let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Medicos</title>
+      </head>
+      <body>
+        <h1>Medicos Registrados en cada piso</h1>
+        <table>
+          <thead>
+            <tr>            
+              <th>Id del area</th>
+              <th>Nombre</th>
+              <th>piso</th>
+              <th>Numero de medicos en ese piso </th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(medicos => {
+      html += `
+        <tr>
+          <td>${medicos.id}</td>
+          <td>${medicos.nombre}</td>
+          <td>${medicos.piso}</td>
+          <td>${medicos.num_medicos_piso}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+        <button onclick="window.location.href='/'">Volver</button>
+      </body>
+      </html>
+    `;
+
+    res.send(html);
+  });
+});
+
+app.get('/medico-mayor', requireLogin, requireRole('admin'), (req, res) => {
+  const query = 'SELECT * FROM promedios_medicos';
+
+  connection.query(query, (err, results) => {
+    if (err) {
+      return res.send('Error al obtener los datos.');
+    }
+
+    let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Medicos</title>
+      </head>
+      <body>
+        <h1>Medicos con salario mayor o igual al promedio</h1>
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre del medico</th>
+              <th>especialidad</th>
+              <th>Nombre de su area</th>
+              <th>Salario</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(medicos => {
+      html += `
+        <tr>
+          <td>${medicos.nombre_medico}</td>
+          <td>${medicos.especialidad}</td>
+          <td>${medicos.nombre_area}</td>
+          <td>${medicos.salario}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+        <button onclick="window.location.href='/'">Volver</button>
+      </body>
+      </html>
+    `;
+
+    res.send(html);
+  });
+});
+app.get('/piso-mayor',requireLogin, requireRole('admin'), (req, res) => {
+  connection.query('SELECT * FROM piso_salario', (err, results) => {
+    if (err) {
+      return res.send('Error al obtener los datos.');
+    }
+
+    let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Pisos</title>
+      </head>
+      <body>
+        <h1>Salario total en cada piso</h1>
+        <table>
+          <thead>
+            <tr>            
+              <th>Piso</th>
+              <th>Salario total</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(medicos => {
+      html += `
+        <tr>
+          <td>${medicos.piso}</td>
+          <td>${medicos.salario_total}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+        <button onclick="window.location.href='/'">Volver</button>
+      </body>
+      </html>
+    `;
+
+    res.send(html);
+  });
+});
+
+app.post('/registrar-tecnico',requireLogin, requireRole('admin','jefem'), (req, res) => {
+  const { name, area} = req.body;
+
+  const query = 'INSERT INTO mantenimiento (nombre_trabajador, area_id) VALUES (?, ?)';
+  connection.query(query, [name,area], (err, result) => {
+    if (err) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+          <meta charset="UTF-8">
+          <title>Error</title>
+          <link rel="stylesheet" href="/styles.css">
+        </head>
+        <body>
+          <div class="message-container">
+            <h2>Error al guardar el trabajador</h2>
+            <p>Hubo un problema al intentar registrar al trabajador. Por favor, intenta nuevamente.</p>
+            <button onclick="window.location.href='/editar-trabajador'">Volver</button>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+    
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <title>Salario actualizado</title>
+        <link rel="stylesheet" href="/styles.css">
+      </head>
+      <body>
+        <div class="message-container">
+          <h2>Trabajador registrado correctamente</h2>
+          <p>El trabajador <strong>${name}</strong> ha sido registrado correctamente.</p>
+          <button onclick="window.location.href='/editar-trabajador'">Volver</button>
+        </div>
+      </body>
+      </html>
+    `);
+  });
+});
+
+app.get('/editar-trabajador', requireLogin, requireRole('admin,','jefem'), (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'rutinas.html'));
+});
+
+app.get('/obtener-trabajador/:id', requireLogin, requireRole('admin', 'jefem'), (req, res) => {
+  const { id } = req.params;
+  
+  const startTransactionQuery = 'START TRANSACTION';
+  const selectQuery = 'SELECT id, nombre_trabajador, area_id, rutina FROM mantenimiento WHERE id = ?';
+
+  connection.query(startTransactionQuery, (err) => {
+    if (err) return res.status(500).send('Error al iniciar la transacción');
+
+    connection.query(selectQuery, [id], (err, results) => {
+      if (err) return res.status(500).send('Error al obtener al técnico');
+      if (results.length === 0) return res.status(404).send('Técnico no encontrado');
+      res.json(results[0]);
+    });
+  });
+});
+
+
+app.post('/rutina', requireLogin, requireRole('admin', 'jefem'), (req, res) => {
+  const { id, rutina, nombre, confirmacion } = req.body;
+  const fechaActualizacion = new Date(); // Obtiene la fecha actual
+
+  const startTransactionQuery = 'START TRANSACTION';
+  const updateQuery = 'UPDATE mantenimiento SET rutina = ?, fecha_asignacion = ? WHERE id = ?';
+  const commitQuery = 'COMMIT';
+  const rollbackQuery = 'ROLLBACK';
+
+  connection.query(startTransactionQuery, (err) => {
+    if (err) {
+      return res.status(500).send('Error al iniciar la transacción');
+    }
+
+    if (confirmacion === 'no') {
+      connection.query(rollbackQuery, (rollbackErr) => {
+        if (rollbackErr) return res.status(500).send('Error al realizar el rollback');
+        return res.send(`
+          <!DOCTYPE html>
+          <html lang="es">
+          <head>
+            <meta charset="UTF-8">
+            <title>Cambios Cancelados</title>
+            <link rel="stylesheet" href="/styles.css">
+          </head>
+          <body>
+            <div class="message-container">
+              <h2>Acción Cancelada</h2>
+              <p>Los cambios en la rutina del técnico han sido cancelados.</p>
+              <button onclick="window.location.href='/editar-trabajador'">Volver</button>
+            </div>
+          </body>
+          </html>
+        `);
+      });
+    } else {
+      connection.query(updateQuery, [rutina, fechaActualizacion, id], (updateErr) => {
+        if (updateErr) {
+          connection.query(rollbackQuery, () => {
+            return res.send(`
+              <!DOCTYPE html>
+              <html lang="es">
+              <head>
+                <meta charset="UTF-8">
+                <title>Error</title>
+                <link rel="stylesheet" href="/styles.css">
+              </head>
+              <body>
+                <div class="message-container">
+                  <h2>Error al guardar la rutina</h2>
+                  <p>Hubo un problema al intentar actualizar la rutina. Por favor, intenta nuevamente.</p>
+                  <button onclick="window.location.href='/editar-trabajador'">Volver</button>
+                </div>
+              </body>
+              </html>
+            `);
+          });
+        } else {
+          connection.query(commitQuery, (commitErr) => {
+            if (commitErr) return res.status(500).send('Error al confirmar la transacción');
+            return res.send(`
+              <!DOCTYPE html>
+              <html lang="es">
+              <head>
+                <meta charset="UTF-8">
+                <title>Rutina Actualizada</title>
+                <link rel="stylesheet" href="/styles.css">
+              </head>
+              <body>
+                <div class="message-container">
+                  <h2>Rutina registrada correctamente</h2>
+                  <p>La rutina del técnico <strong>${nombre}</strong> ha sido actualizada correctamente.</p>
+                  <p>Fecha de actualización: <strong>${fechaActualizacion.toLocaleString()}</strong></p>
+                  <button onclick="window.location.href='/editar-trabajador'">Volver</button>
+                </div>
+              </body>
+              </html>
+            `);
+          });
+        }
+      });
+    }
+  });
+});
+
+
+app.get('/ver-rutinas', requireLogin, requireRole('admin','jefem'), (req, res) => {
+  // Lógica de consulta para ver pacientes
+    connection.query('SELECT * FROM mantenimiento', (err, results) => {
+      if (err) {
+        return res.send('Error al obtener los datos.');
+      }
+  
+      let html = `
+        <html>
+        <head>
+          <link rel="stylesheet" href="/styles.css">
+          <title>Rutinas</title>
+        </head>
+        <body>
+          <h1>Tecnicos asignados</h1>
+          <table>
+            <thead>
+              <tr>
+                <th>Id</th>
+                <th>Nombre</th>
+                <th>Id del area</th>
+                <th>Rutina</th>
+                <th>Fecha de asignacion</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+  
+      results.forEach(tecnico => {
+        html += `
+          <tr>
+            <td>${tecnico .id}</td>
+            <td>${tecnico .nombre_trabajador}</td>
+            <td>${tecnico .area_id}</td>
+            <td>${tecnico .rutina}</td>
+            <td>${tecnico .fecha_asignacion}</td>
+          </tr>
+        `;
+      });
+  
+      html += `
+            </tbody>
+          </table>
+          <button onclick="window.location.href='/'">Volver</button>
+        </body>
+        </html>
+      `;
+  
+      res.send(html);
+    });
+});
+
+app.get('/ver-mis-rutinas', requireLogin, requireRole('mantenimiento'), (req, res) => {
+  const user = req.session.user.nombre_usuario;
+  const query = 'SELECT * FROM mantenimiento WHERE nombre_trabajador = ? ';
+  connection.query(query, [user], (err, results) => {
+      if (err) return res.send('Error al obtener usuarios');
+    
+      let html = `
+      <html>
+      <head>
+        <link rel="stylesheet" href="/styles.css">
+        <title>Mis rutinas</title>
+      </head>
+      <body>
+        <h1>Rutina asignada</h1>
+        <table>
+          <thead>
+            <tr>
+              <th>Id</th>
+              <th>Nombre</th>
+              <th>Rutina</th>
+              <th>Fecha de asignacion</th>
+            </tr>
+          </thead>
+          <tbody>
+    `;
+
+    results.forEach(tecnico => {
+      html += `
+        <tr>
+          <td>${tecnico .id}</td>
+          <td>${tecnico .nombre_trabajador}</td>
+          <td>${tecnico .rutina}</td>
+          <td>${tecnico .fecha_asignacion}</td>
+        </tr>
+      `;
+    });
+
+    html += `
+          </tbody>
+        </table>
+        <button onclick="window.location.href='/'">Volver</button>
+      </body>
+      </html>
+    `;
+
+    res.send(html);
+  });
+});
+// Ruta para agregar o eliminar columnas en una tabla
+
+// Ruta para agregar o eliminar columnas en una tabla
+app.post('/modificar-tabla', requireLogin, requireRole('admin'), (req, res) => {
+  const { tabla, accion, nombre_columna, tipo_dato, rango } = req.body;
+
+  // Validar entrada
+  if (!tabla || !nombre_columna || !accion) {
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <link rel="stylesheet" href="/styles.css">
+        <title>Error</title>
+      </head>
+      <body>
+        <div class="message-container error">
+          <h2>Error</h2>
+          <p>Faltan datos necesarios para realizar la operación.</p>
+          <button onclick="window.location.href='/modificar-tabla.html'">Volver</button>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+
+  // Crear la consulta SQL según la acción
+  let query;
+  if (accion === 'agregar') {
+    if (!tipo_dato) {
+      return res.send(`
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+          <meta charset="UTF-8">
+          <link rel="stylesheet" href="/styles.css">
+          <title>Error</title>
+        </head>
+        <body>
+          <div class="message-container error">
+            <h2>Error</h2>
+            <p>Es necesario especificar un tipo de dato para agregar una columna.</p>
+            <button onclick="window.location.href='/modificar-tabla.html'">Volver</button>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+    const tipoConRango = rango ? `${tipo_dato}(${rango})` : tipo_dato;
+    query = `ALTER TABLE ?? ADD ?? ${tipoConRango}`;
+  } else if (accion === 'eliminar') {
+    query = 'ALTER TABLE ?? DROP COLUMN ??';
+  } else {
+    return res.send(`
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <link rel="stylesheet" href="/styles.css">
+        <title>Error</title>
+      </head>
+      <body>
+        <div class="message-container error">
+          <h2>Error</h2>
+          <p>Acción inválida.</p>
+          <button onclick="window.location.href='/modificar-tabla.html'">Volver</button>
+        </div>
+      </body>
+      </html>
+    `);
+  }
+
+  // Ejecutar la consulta
+  connection.query(query, [tabla, nombre_columna], (err, result) => {
+    if (err) {
+      console.error('Error al modificar la tabla:', err);
+      return res.send(`
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+          <meta charset="UTF-8">
+          <link rel="stylesheet" href="/styles.css">
+          <title>Error</title>
+        </head>
+        <body>
+          <div class="message-container error">
+            <h2>Error</h2>
+            <p>No se pudo realizar la operación en la tabla: ${err.message}</p>
+            <button onclick="window.location.href='/modificar-tabla.html'">Volver</button>
+          </div>
+        </body>
+        </html>
+      `);
+    }
+
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <link rel="stylesheet" href="/styles.css">
+        <title>Éxito</title>
+      </head>
+      <body>
+        <div class="message-container success">
+          <h2>Éxito</h2>
+          <p>La operación se realizó correctamente en la tabla <strong>${tabla}</strong>.</p>
+          <button onclick="window.location.href='/modificar-tabla.html'">Volver</button>
+        </div>
+      </body>
+      </html>
+    `);
+  });
+});
+
