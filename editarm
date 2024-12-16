@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Editar Médico</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <h2>Revision y asignación de sueldos</h2>
+  
+  <form id="buscarmedicoForm">
+    <label for="medico-id">ID del médico:</label>
+    <input type="number" id="medico-id" required>
+    <button type="button" onclick="buscarmedico()">Buscar</button>
+  </form>
+  
+  <button onclick="window.location.href='/sueldos.html'">Analizar sueldos</button>  
+  
+  <form id="editarmedicoForm" style="display: none;" method="POST" action="/sueldo">
+    <input type="hidden" id="medico-id-hidden" name="id">
+    
+    <label for="nombre">Nombre:</label>
+    <input type="text" id="nombre" name="nombre" readonly>
+
+    <label for="sueldo">Sueldo:</label>
+    <input type="number" id="sueldo" name="sueldo" step="0.01" required>
+
+    <button type="submit">Guardar Cambios</button>
+  </form>
+
+  <script>
+    function buscarmedico() {
+      const medicoId = document.getElementById('medico-id').value;
+      
+      if (!medicoId) {
+        alert('Por favor, ingresa un ID válido.');
+        return;
+      }
+
+      fetch(`/obtener-medico/${medicoId}`)
+        .then(response => {
+          if (!response.ok) throw new Error('Médico no encontrado');
+          return response.json();
+        })
+        .then(data => {
+          document.getElementById('editarmedicoForm').style.display = 'block';
+          document.getElementById('medico-id-hidden').value = data.id;
+          document.getElementById('nombre').value = data.nombre;
+          document.getElementById('sueldo').value = data.sueldo;
+        })
+        .catch(error => alert(error.message));
+    }
+  </script>
+
+  <button onclick="window.location.href='/'">Volver</button>
+</body>
+</html>
