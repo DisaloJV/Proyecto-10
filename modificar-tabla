@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="/styles.css">
+  <title>Modificar Tabla</title>
+</head>
+<body>
+  <div class="form-container">
+    <h2>Modificar Tabla</h2>
+    <form action="/modificar-tabla" method="POST">
+      <label for="tabla">Nombre de la tabla:</label>
+      <input type="text" id="tabla" name="tabla" required>
+      
+      <label for="accion">Acción:</label>
+      <select id="accion" name="accion" required>
+        <option value="agregar">Agregar columna</option>
+        <option value="eliminar">Eliminar columna</option>
+      </select>
+      
+      <label for="nombre_columna">Nombre de la columna:</label>
+      <input type="text" id="nombre_columna" name="nombre_columna" required>
+      
+      <label for="tipo_dato">Tipo de dato:</label>
+      <select id="tipo_dato" name="tipo_dato">
+        <option value="INT" selected>INT</option>
+        <option value="VARCHAR">VARCHAR</option>
+        <option value="DECIMAL">DECIMAL</option>
+        <option value="DATE">DATE</option>
+        <option value="TIMESTAMP">TIMESTAMP</option>
+      </select>
+      
+      <label for="rango">Rango (solo para VARCHAR y DECIMAL):</label>
+      <input type="text" id="rango" name="rango" placeholder="Ej: 100 o 10,2">
+
+      <button type="submit">Realizar operación</button>
+    </form>
+    <button onclick="window.location.href='/'">Volver</button>
+  </div>
+</body>
+</html>
