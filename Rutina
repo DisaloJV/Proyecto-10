@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Editar Técnico</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <h2>Registro del Técnico</h2>
+  <form action="/registrar-tecnico" method="POST">
+    <label for="name">Nombre del trabajador:</label>
+    <input type="text" id="name" name="name">
+    
+    <label for="area">Área donde trabaja:</label>
+    <input type="number" id="area" name="area">
+    
+    <button type="submit">Guardar</button>
+  </form>
+
+  <h2>Buscar al Técnico</h2>
+  <form id="buscartecnicoForm">
+    <label for="tecnico-id">ID del trabajador:</label>
+    <input type="number" id="tecnico-id" required>
+    <button type="button" onclick="buscarTecnico()">Buscar</button>
+  </form>
+  <button onclick="window.location.href='/ver-rutinas'">Ver rutinas de los técnicos</button>
+
+  <form id="editartecnicoForm" style="display: none;" method="POST" action="/rutina">
+    <input type="hidden" id="tecnico-id-hidden" name="id">
+    
+    <label for="nombre">Nombre:</label>
+    <input type="text" id="nombre" name="nombre" readonly>
+      
+    <label for="area">ID del área donde trabaja:</label>
+    <input type="number" id="area_id" name="area_id" readonly>
+
+    <label for="rutina">Rutina:</label> 
+    <input type="text" id="rutina" name="rutina" required>
+
+    <button type="button" onclick="mostrarConfirmacion()">Guardar Cambios</button>
+  </form>
+
+  <!-- Modal de confirmación -->
+  <div id="confirmacion-modal" style="display: none; background-color: rgba(0, 0, 0, 0.5); padding: 20px; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 1000; border: 1px solid #ccc; border-radius: 5px; color: white;">
+    <p>¿Estás seguro de guardar los cambios?</p>
+    <button id="confirmar-guardar" type="button">Sí</button>
+    <button id="cancelar-guardar" type="button">No</button>
+  </div>
+
+  <script>
+    // Función para buscar técnico
+    function buscarTecnico() {
+      const tecnicoId = document.getElementById('tecnico-id').value;
+      
+      if (!tecnicoId) {
+        alert('Por favor, ingresa un ID válido.');
+        return;
+      }
+
+      fetch(`/obtener-trabajador/${tecnicoId}`)
+        .then(response => {
+          if (!response.ok) throw new Error('Técnico no encontrado');
+          return response.json();
+        })
+        .then(data => {
+          console.log('Datos del trabajador:', data); // Verifica los datos recibidos
+          const form = document.getElementById('editartecnicoForm');
+          form.style.display = 'block';
+
+          // Asigna los valores después de mostrar el formulario
+          document.getElementById('tecnico-id-hidden').value = data.id;
+          document.getElementById('nombre').value = data.nombre_trabajador;
+          document.getElementById('area_id').value = data.area_id || 'Sin asignar';
+          document.getElementById('rutina').value = data.rutina || '';
+        })
+        .catch(error => alert(error.message));
+    }
+
+    // Función para mostrar el modal de confirmación
+    function mostrarConfirmacion() {
+      document.getElementById('confirmacion-modal').style.display = 'block';
+    }
+
+    // Confirmar guardar cambios
+    document.getElementById('confirmar-guardar').addEventListener('click', function () {
+      const form = document.getElementById('editartecnicoForm');
+      const confirmacionInput = document.createElement('input');
+      confirmacionInput.type = 'hidden';
+      confirmacionInput.name = 'confirmacion';
+      confirmacionInput.value = 'yes'; // Confirmar cambios
+      form.appendChild(confirmacionInput);
+      form.submit();
+    });
+
+    // Cancelar guardar cambios
+    document.getElementById('cancelar-guardar').addEventListener('click', function () {
+      const form = document.getElementById('editartecnicoForm');
+      const confirmacionInput = document.createElement('input');
+      confirmacionInput.type = 'hidden';
+      confirmacionInput.name = 'confirmacion';
+      confirmacionInput.value = 'no'; // Cancelar cambios
+      form.appendChild(confirmacionInput);
+      form.submit();
+    });
+  </script>
+
+  <button onclick="window.location.href='/'">Volver</button>
+</body>
+</html>
